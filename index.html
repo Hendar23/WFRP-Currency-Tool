@@ -58,6 +58,8 @@
   .btn-add:hover { background-color: #1b5e20; }
   .btn-sub { background-color: #c62828; flex: 1; margin-top: 0;}
   .btn-sub:hover { background-color: #b71c1c; }
+  .btn-invest { background-color: #8e24aa; flex: 1; margin-top: 0;}
+  .btn-invest:hover { background-color: #6a1b9a; }
   
   .btn-row { display: flex; gap: 10px; margin-top: 15px; }
 
@@ -95,8 +97,8 @@
     
     <hr style="border-color: #444; margin: 20px 0;">
     
-    <label style="text-align: center; margin-bottom: 10px; color:#aaa;">Transaction (Cost or Loot)</label>
-    <div class="coin-row">
+    <label style="text-align: center; margin-bottom: 10px; color:#aaa;">Transaction (Cost, Loot, or Investment)</label>
+    <div class="coin-row" style="margin-bottom: 10px;">
       <div class="input-group">
         <input type="number" id="t-gold" value="0" min="0" placeholder="gc">
       </div>
@@ -107,9 +109,14 @@
         <input type="number" id="t-brass" value="0" min="0" placeholder="p">
       </div>
     </div>
+    <div class="coin-row" style="justify-content: center; align-items: center; margin-bottom: 5px;">
+      <label style="color: #aaa; margin: 0 10px 0 0;">Interest %:</label>
+      <input type="number" id="t-percent" value="0" min="0" style="width: 80px; padding: 8px;">
+    </div>
     <div class="btn-row">
       <button class="btn-add" onclick="processTransaction('add')">➕ Add</button>
       <button class="btn-sub" onclick="processTransaction('sub')">➖ Pay</button>
+      <button class="btn-invest" onclick="processTransaction('invest')">📈 Invest</button>
     </div>
     <div class="error-msg" id="error-msg"></div>
   </div>
@@ -200,7 +207,12 @@
     let currentBrass = toBrass(getVal('p-gold'), getVal('p-silver'), getVal('p-brass'));
     let transBrass = toBrass(getVal('t-gold'), getVal('t-silver'), getVal('t-brass'));
 
-    let newBrassTotal = type === 'add' ? currentBrass + transBrass : currentBrass - transBrass;
+    if (type === 'invest') {
+      let percent = parseFloat(document.getElementById('t-percent').value) || 0;
+      transBrass = Math.floor(transBrass * (1 + (percent / 100)));
+    }
+
+    let newBrassTotal = (type === 'add' || type === 'invest') ? currentBrass + transBrass : currentBrass - transBrass;
 
     if (newBrassTotal < 0) {
       errorDiv.innerText = "Not enough funds!";
@@ -212,9 +224,11 @@
     document.getElementById('p-silver').value = opt.s;
     document.getElementById('p-brass').value = opt.b;
 
+    // Reset fields
     document.getElementById('t-gold').value = 0;
     document.getElementById('t-silver').value = 0;
     document.getElementById('t-brass').value = 0;
+    document.getElementById('t-percent').value = 0;
     
     updateEncumbrance();
   }
