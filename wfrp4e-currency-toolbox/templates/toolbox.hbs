@@ -1,0 +1,37 @@
+<section class="currency-panel">
+  <p>Select the characters to include. Offline players' characters are available too.</p>
+  <div class="currency-toolbar"><button type="button" data-all>Select all</button><button type="button" data-none>Clear</button></div>
+  <div class="currency-actors">
+    {{#each actors}}
+    <label class="currency-actor">
+      <input type="checkbox" data-actor="{{id}}" {{#if selected}}checked{{/if}}>
+      <span><strong>{{name}}</strong><small>Purse: {{cash}} · Bank: {{balance}}</small>{{#if error}}<small class="currency-error">{{error}}</small>{{/if}}</span>
+    </label>
+    {{else}}<p>No player controlled character actors were found.</p>{{/each}}
+  </div>
+  <label class="currency-field">Action
+    <select name="mode">
+      <option value="pay">Pay each</option>
+      <option value="credit">Credit each</option>
+      <option value="split">Split one reward</option>
+      <option value="deposit">Deposit to bank</option>
+      <option value="withdraw">Withdraw from bank</option>
+      <option value="interest">Apply bank interest</option>
+    </select>
+  </label>
+  <div class="currency-fields">
+    <label>Gold <input type="number" name="gc" min="0" step="1" value="{{amount.gc}}"></label>
+    <label>Silver <input type="number" name="ss" min="0" step="1" value="{{amount.ss}}"></label>
+    <label>Brass <input type="number" name="bp" min="0" step="1" value="{{amount.bp}}"></label>
+    <label>Interest % <input type="number" name="rate" min="0" max="100" step="0.01" value="{{rate}}"></label>
+  </div>
+  <p class="currency-hint">The coin fields apply to payments, credits and transfers. Interest applies to bank balances only.</p>
+  <label class="currency-field">Reason (optional) <input type="text" name="reason" maxlength="120" value="{{reason}}"></label>
+  <div class="currency-preview" data-preview aria-live="polite"></div>
+  <button type="button" data-apply disabled>Apply transaction</button>
+  <p>Group fund from split remainders: <strong>{{groupFund}}</strong></p>
+  {{#if ledger.length}}
+  <details><summary>Recent bank transactions for selected character</summary>
+    <ol>{{#each ledger}}<li>{{dateText}} · {{type}} {{amountText}} · balance {{balanceText}}{{#if reason}} · {{reason}}{{/if}}</li>{{/each}}</ol>
+  </details>{{/if}}
+</section>
