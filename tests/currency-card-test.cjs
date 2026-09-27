@@ -25,11 +25,11 @@ const context = {
   Hooks: { once() {}, on() {} },
   canvas: { tokens: { controlled: actors.map(a => ({ id: `token-${a.id}`, name: a.name, actor: a })) } },
   fromUuid: async uuid => [...actors, context.canvas.tokens.controlled[0]?.actor].find(a => a?.uuid === uuid),
-  game: { actors, user: { id: 'gm', isGM: true }, users: actors.map(a => ({
+  game: { actors, user: { id: 'gm', name: 'Game Master', isGM: true }, users: actors.map(a => ({
     name: `${a.name} player`, isGM: false, character: a, active: false
   })), settings: { get: () => groupFund, set: async (_id, _key, value) => { groupFund = value; } },
     i18n: { localize: key => ({ 'MARKET.Abbrev.GC': 'gc', 'MARKET.Abbrev.SS': 'ss', 'MARKET.Abbrev.BP': 'bp' })[key] ?? key },
-    wfrp4e: { utility: { chatDataSetup: (html, type, whisper, opts) => ({ content: html, opts }) },
+    wfrp4e: { utility: { chatDataSetup: (html, type, whisper, opts) => ({ content: html, opts, speaker: { actor: 'A', alias: 'A' } }) },
       market: { creditCommand: (_amount, actor) => actor.items.map(i => ({ _id: i.id, 'system.quantity.value': i.system.quantity.value + (i.system.coinValue.value === 12 ? 1 : 0) })) } } },
   ChatMessage: { create: async data => { messages.push(data); } },
   ui: { notifications: { error: value => { throw Error(value); }, info: () => {} } }
@@ -49,6 +49,9 @@ app.render = async () => {};
   assert.equal(messages[0].type, 'pay');
   assert.equal(messages[0].system.payString, '1gc2ss0bp');
   assert.equal(messages[0].opts.forceWhisper, 'A player');
+  assert.equal(messages[0].user, 'gm');
+  assert.equal(messages[0].speaker.alias, 'Game Master');
+  assert.equal(messages[0].speaker.actor, undefined);
   assert.equal(actors[0].items[0].system.quantity.value, 1);
   app.mode = 'split'; app.amount = { gc: 0, ss: 0, bp: 5 };
   await app._apply();
@@ -69,6 +72,7 @@ app.render = async () => {};
   await app._apply();
   assert.equal(messages[4].whisper[0], 'gm');
   assert.equal(messages[4].flags['wfrp4e-currency-toolbox'].actorUuid, 'Actor.GM');
+  assert.equal(messages[4].speaker.alias, 'Game Master');
   const gmActor = context.canvas.tokens.controlled[0].actor;
   const card = { id: 'card', flags: messages[4].flags, getFlag: () => 'Actor.GM',
     update: async () => { card.flags['wfrp4e-currency-toolbox'].claimed = true; } };
@@ -104,5 +108,6 @@ app.render = async () => {};
   assert.equal(actors[1].bankData.balance, 0);
   assert.equal(actors[1].bankData.ledger[1].type, 'wipe');
   assert.equal(actors[1].bankData.ledger[1].amount, 18);
+  assert.equal(messages.at(-1).speaker.alias, 'Game Master');
   console.log('Native card smoke tests passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

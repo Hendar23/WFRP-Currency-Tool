@@ -67,6 +67,10 @@ function assignedPlayer(actor) {
   return users.length === 1 ? users[0] : null;
 }
 
+function gmSpeaker() {
+  return { alias: game.user.name };
+}
+
 async function postMoneyCard(row, mode, amount, reason) {
   const player = assignedPlayer(row.actor);
   if (!player) return postGMCard(row, mode, amount, reason);
@@ -83,6 +87,8 @@ async function postMoneyCard(row, mode, amount, reason) {
     alias: game.i18n.localize(mode === "pay" ? "MARKET.PayRequest" : "MARKET.CreditRequest")
   };
   const chatData = game.wfrp4e.utility.chatDataSetup(html, "roll", false, options);
+  chatData.user = game.user.id;
+  chatData.speaker = gmSpeaker();
   chatData.type = mode === "pay" ? "pay" : "credit";
   chatData.system = mode === "pay"
     ? { payString: amountText, player: player.name, product: reason }
@@ -96,6 +102,8 @@ async function postGMCard(row, mode, amount, reason) {
   const detail = reason ? `<p>${foundry.utils.escapeHTML(reason)}</p>` : "";
   await ChatMessage.create({
     content: `<div class="currency-chat-card"><p><strong>${name}</strong>: ${verb} ${format(amount)}</p>${detail}<button type="button" data-currency-confirm>${verb} as ${name}</button></div>`,
+    user: game.user.id,
+    speaker: gmSpeaker(),
     whisper: [game.user.id],
     flags: { [ID]: { actorUuid: row.actor.uuid, mode, amount, claimed: false } }
   });
@@ -372,7 +380,10 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
           : this.mode === "wipe" ? "balances cleared"
           : this.mode === "withdraw" && this.maxWithdraw.size ? "amounts shown in each actor's bank ledger"
           : format(this.amount.gc * 240 + this.amount.ss * 12 + this.amount.bp);
-      await ChatMessage.create({ content: `<p><strong>${foundry.utils.escapeHTML(this.mode)}</strong>: ${amount}${cleanReason ? ` (${cleanReason})` : ""}</p><p>${cleanNames}</p>` });
+      await ChatMessage.create({
+        content: `<p><strong>${foundry.utils.escapeHTML(this.mode)}</strong>: ${amount}${cleanReason ? ` (${cleanReason})` : ""}</p><p>${cleanNames}</p>`,
+        user: game.user.id, speaker: gmSpeaker()
+      });
     }
     if (failures.length) ui.notifications.error(failures.join(" | "));
     else ui.notifications.info(`Updated ${completed.length} character(s).`);
