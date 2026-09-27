@@ -38,9 +38,10 @@ function bank(actor) {
 
 function livingCost(actor) {
   const status = actor.system?.details?.status;
-  const tier = String(status?.tier ?? "").trim().toLowerCase();
-  const standing = Number(status?.standing);
-  const denomination = { brass: 1, silver: 12, gold: 240 }[tier];
+  const label = String(status?.value ?? "").trim().match(/^(brass|silver|gold|[bsg])\s*(\d+)$/i);
+  const tier = String(status?.tier || label?.[1] || "").trim().toLowerCase();
+  const standing = Number(status?.standing ?? label?.[2]);
+  const denomination = { b: 1, brass: 1, s: 12, silver: 12, g: 240, gold: 240 }[tier];
   if (!denomination || !Number.isSafeInteger(standing) || standing < 1)
     throw new Error(`${actor.name}: current Social Status is missing or invalid.`);
   // Half the Standing in the tier's denomination, rounded up at a half penny.
