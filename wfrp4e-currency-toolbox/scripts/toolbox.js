@@ -36,6 +36,17 @@ function bank(actor) {
   return { balance: data?.balance ?? 0, ledger: data?.ledger ?? [] };
 }
 
+function livingCost(actor) {
+  const status = actor.system?.details?.status;
+  const tier = String(status?.tier ?? "").trim().toLowerCase();
+  const standing = Number(status?.standing);
+  const denomination = { brass: 1, silver: 12, gold: 240 }[tier];
+  if (!denomination || !Number.isSafeInteger(standing) || standing < 1)
+    throw new Error(`${actor.name}: current Social Status is missing or invalid.`);
+  // Half the Standing in the tier's denomination, rounded up at a half penny.
+  return Math.ceil(standing * denomination / 2);
+}
+
 function validInteger(value, name) {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative whole number.`);
   return value;
@@ -126,6 +137,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
 
   selected = new Set();
   visibleTokens = new Set();
+  maxWithdraw = new Set();
   mode = "pay";
   amount = { gc: 0, ss: 0, bp: 0 };
   rate = 5;
@@ -145,6 +157,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
     this.selected = new Set([...this.selected].filter(id => current.has(id)));
     for (const id of current) if (!this.visibleTokens.has(id)) this.selected.add(id);
     this.visibleTokens = current;
+    this.maxWithdraw = new Set([...this.maxWithdraw].filter(id => current.has(id)));
   }
 
   async _prepareContext() {
@@ -155,10 +168,13 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
       try { cash = purse(a); } catch (e) { error = e.message; }
       const account = bank(a);
       return { id, name, selected: this.selected.has(id),
-        cash: format(cash), balance: format(account.balance), error };
+        cash: format(cash), balance: format(account.balance), max: this.maxWithdraw.has(id), error };
     });
     const single = targets.find(target => this.selected.has(target.id));
-    return { actors, mode: this.mode, amount: this.amount, rate: this.rate,
+    return { actors, mode: this.mode, isInterest: this.mode === "interest",
+      isWithdraw: this.mode === "withdraw", isLiving: this.mode === "living",
+      isWipe: this.mode === "wipe", showCoins: !["interest", "living", "wipe"].includes(this.mode),
+      amount: this.amount, rate: this.rate,
       reason: this.reason, groupFund: format(game.settings.get(ID, "groupFund")),
       ledger: this.selected.size === 1 && single ? bank(single.actor).ledger.slice(-8).reverse().map(x => ({
         ...x, amountText: format(x.amount), balanceText: format(x.after),
@@ -169,44 +185,56 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
   _capture() {
     const root = this.element;
     this.selected = new Set([...root.querySelectorAll("[data-actor]:checked")].map(el => el.dataset.actor));
-    this.mode = root.querySelector("[name=mode]").value;
-    this.reason = root.querySelector("[name=reason]").value.trim();
-    this.amount = Object.fromEntries(Object.keys(VALUES).map(k => [k, Number(root.querySelector(`[name=${k}]`).value)]));
-    this.rate = Number(root.querySelector("[name=rate]").value);
+    this.reason = root.querySelector("[name=reason]")?.value.trim() ?? this.reason;
+    this.amount = Object.fromEntries(Object.keys(VALUES).map(k =>
+      [k, Number(root.querySelector(`[name=${k}]`)?.value ?? this.amount[k])]));
+    this.rate = Number(root.querySelector("[name=rate]")?.value ?? this.rate);
   }
 
   _plan() {
     const targets = this.targets.filter(target => this.selected.has(target.id));
     if (!targets.length) throw new Error("Select at least one token on the canvas.");
-    if (Object.values(this.amount).some(n => !Number.isSafeInteger(n) || n < 0))
+    if (!["interest", "living", "wipe"].includes(this.mode) &&
+      Object.values(this.amount).some(n => !Number.isSafeInteger(n) || n < 0))
       throw new Error("Enter whole, non-negative coin amounts.");
-    const amount = this.amount.gc * 240 + this.amount.ss * 12 + this.amount.bp;
+    const amount = ["interest", "living", "wipe"].includes(this.mode)
+      ? 0 : this.amount.gc * 240 + this.amount.ss * 12 + this.amount.bp;
     validInteger(amount, "Amount");
     if (this.mode === "interest") {
       if (!Number.isFinite(this.rate) || this.rate < 0 || this.rate > 100)
         throw new Error("Interest must be between 0% and 100%.");
-    } else if (!amount) throw new Error("Enter an amount greater than zero.");
+    } else if (!["living", "wipe", "withdraw"].includes(this.mode) && !amount)
+      throw new Error("Enter an amount greater than zero.");
     const split = this.mode === "split" ? allocate(amount, targets.length) : null;
     if (split && split.each < 1) throw new Error("The reward is too small to give each selected character one brass penny.");
-    const rows = targets.map(({ actor }) => {
+    const rows = targets.map(({ actor, id }) => {
       const cash = purse(actor), account = bank(actor);
       validInteger(account.balance, `${actor.name}'s bank balance`);
+      const rowAmount = this.mode === "living" ? livingCost(actor)
+        : this.mode === "withdraw" && this.maxWithdraw.has(id) ? account.balance : amount;
+      if (this.mode === "withdraw" && !rowAmount)
+        throw new Error(`${actor.name}: enter an amount or select Max for an account with a balance.`);
       let deltaCash = 0, deltaBank = 0;
       switch (this.mode) {
-        case "pay": deltaCash = -amount; break;
+        case "pay": case "living": deltaCash = -rowAmount; break;
         case "credit": deltaCash = amount; break;
         case "split": deltaCash = split.each; break;
         case "deposit": deltaCash = -amount; deltaBank = amount; break;
-        case "withdraw": deltaCash = amount; deltaBank = -amount; break;
+        case "withdraw": deltaCash = rowAmount; deltaBank = -rowAmount; break;
         case "interest": deltaBank = Math.round(account.balance * this.rate / 100); break;
+        case "wipe": deltaBank = -account.balance; break;
         default: throw new Error("Unknown transaction.");
       }
       const afterCash = cash + deltaCash, afterBank = account.balance + deltaBank;
-      if (afterCash < 0) throw new Error(`${actor.name} cannot afford this payment.`);
+      if (afterCash < 0 && !["pay", "living"].includes(this.mode))
+        throw new Error(`${actor.name} cannot afford this payment.`);
       if (afterBank < 0) throw new Error(`${actor.name} has insufficient bank funds.`);
-      validInteger(afterCash, "Purse balance"); validInteger(afterBank, "Bank balance");
-      return { actor, cash, account, afterCash, afterBank, deltaCash, deltaBank };
+      if (afterCash >= 0) validInteger(afterCash, "Purse balance");
+      validInteger(afterBank, "Bank balance");
+      return { actor, cash, account, afterCash, afterBank, deltaCash, deltaBank, rowAmount };
     });
+    if (this.mode === "wipe" && rows.every(row => row.account.balance === 0))
+      throw new Error("The selected bank balances are already zero.");
     return { rows, split };
   }
 
@@ -215,8 +243,8 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
     try {
       this._capture();
       const { rows, split } = this._plan();
-      const entries = rows.map(r => `<li>${foundry.utils.escapeHTML(r.actor.name)}: purse ${format(r.afterCash)}; bank ${format(r.afterBank)}</li>`).join("");
-      el.innerHTML = `<strong>${["pay", "credit", "split"].includes(this.mode) ? "If the players confirm" : "After this transaction"}</strong><ul>${entries}</ul>` +
+      const entries = rows.map(r => `<li>${foundry.utils.escapeHTML(r.actor.name)}: ${this.mode === "living" ? `daily cost ${format(r.rowAmount)}; ` : ""}${r.afterCash < 0 ? "insufficient purse funds" : `purse ${format(r.afterCash)}`}; bank ${format(r.afterBank)}</li>`).join("");
+      el.innerHTML = `<strong>${["pay", "credit", "split", "living"].includes(this.mode) ? "If the cards are accepted" : "After this transaction"}</strong><ul>${entries}</ul>` +
         (split ? `<p>Each receives ${format(split.each)}. ${format(split.remainder)} goes to the group fund.</p>` : "") +
         (this.mode === "interest" ? `<p>Interest is rounded to the nearest brass penny.</p>` : "");
       this.element.querySelector("[data-apply]").disabled = false;
@@ -228,7 +256,23 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _onRender(context, options) {
     await super._onRender(context, options);
-    this.element.querySelector("[name=mode]").value = this.mode;
+    this.element.querySelectorAll("[data-mode]").forEach(button => {
+      button.setAttribute("aria-pressed", String(button.dataset.mode === this.mode));
+      button.addEventListener("click", async () => {
+      this._capture();
+      this.mode = button.dataset.mode;
+      await this.render({ force: true });
+      });
+    });
+    this.element.querySelectorAll("[data-max]").forEach(button => button.addEventListener("click", () => {
+      this._capture();
+      const id = button.dataset.max;
+      if (this.maxWithdraw.has(id)) this.maxWithdraw.delete(id);
+      else this.maxWithdraw.add(id);
+      button.setAttribute("aria-pressed", String(this.maxWithdraw.has(id)));
+      button.textContent = this.maxWithdraw.has(id) ? "Max selected" : "Max";
+      this._preview();
+    }));
     this.element.querySelectorAll("input, select").forEach(el => el.addEventListener("input", () => this._preview()));
     this.element.querySelector("[data-all]").addEventListener("click", () => {
       this.element.querySelectorAll("[data-actor]").forEach(el => el.checked = true);
@@ -249,14 +293,24 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
     catch (error) { return ui.notifications.error(error.message); }
     const button = this.element.querySelector("[data-apply]");
     button.disabled = true;
-    if (["pay", "credit", "split"].includes(this.mode)) {
+    if (this.mode === "wipe") {
+      const names = plan.rows.filter(row => row.account.balance).map(row =>
+        `${foundry.utils.escapeHTML(row.actor.name)} (${format(row.account.balance)})`).join("<br>");
+      const confirmed = await foundry.applications.api.DialogV2.confirm({
+        window: { title: "Wipe bank balances?" },
+        content: `<p>Set these bank balances to zero? This records the loss in each actor's ledger.</p><p>${names}</p>`
+      });
+      if (!confirmed) { button.disabled = false; return; }
+    }
+    if (["pay", "credit", "split", "living"].includes(this.mode)) {
       const failures = [], posted = [];
       for (const row of plan.rows) {
         try {
           if (purse(row.actor) !== row.cash) throw new Error("Purse changed. Review and retry.");
-          const amount = this.mode === "split" ? plan.split.each : this.amount.gc * 240 + this.amount.ss * 12 + this.amount.bp;
+          const amount = this.mode === "split" ? plan.split.each : row.rowAmount;
           if (amount < 1) throw new Error("This share is less than one brass penny.");
-          await postMoneyCard(row, this.mode === "pay" ? "pay" : "credit", amount, this.reason);
+          const reason = this.mode === "living" ? `Daily living costs: ${row.actor.name}` : this.reason;
+          await postMoneyCard(row, ["pay", "living"].includes(this.mode) ? "pay" : "credit", amount, reason);
           posted.push(row.actor.name);
         } catch (error) { failures.push(`${row.actor.name}: ${error.message}`); }
       }
@@ -272,6 +326,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
     const completed = [], failures = [];
     for (const row of plan.rows) {
       try {
+        if (this.mode === "wipe" && !row.account.balance) continue;
         // Revalidate against the live documents before each write.
         if (purse(row.actor) !== row.cash || bank(row.actor).balance !== row.account.balance)
           throw new Error("Balance changed while the panel was open. Review the preview and retry.");
@@ -312,7 +367,10 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
     if (completed.length) {
       const cleanNames = completed.map(name => foundry.utils.escapeHTML(name)).join(", ");
       const cleanReason = foundry.utils.escapeHTML(this.reason);
-      const amount = this.mode === "interest" ? `${this.rate}% interest` : format(this.amount.gc * 240 + this.amount.ss * 12 + this.amount.bp);
+        const amount = this.mode === "interest" ? `${this.rate}% interest`
+          : this.mode === "wipe" ? "balances cleared"
+          : this.mode === "withdraw" && this.maxWithdraw.size ? "amounts shown in each actor's bank ledger"
+          : format(this.amount.gc * 240 + this.amount.ss * 12 + this.amount.bp);
       await ChatMessage.create({ content: `<p><strong>${foundry.utils.escapeHTML(this.mode)}</strong>: ${amount}${cleanReason ? ` (${cleanReason})` : ""}</p><p>${cleanNames}</p>` });
     }
     if (failures.length) ui.notifications.error(failures.join(" | "));

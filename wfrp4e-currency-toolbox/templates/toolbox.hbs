@@ -3,32 +3,37 @@
   <div class="currency-toolbar"><button type="button" data-all>Select all</button><button type="button" data-none>Clear</button></div>
   <div class="currency-actors">
     {{#each actors}}
-    <label class="currency-actor">
-      <input type="checkbox" data-actor="{{id}}" {{#if selected}}checked{{/if}}>
-      <span><strong>{{name}}</strong><small>Purse: {{cash}} · Bank: {{balance}}</small>{{#if error}}<small class="currency-error">{{error}}</small>{{/if}}</span>
-    </label>
+    <div class="currency-actor">
+      <label class="currency-actor-name">
+        <input type="checkbox" data-actor="{{id}}" {{#if selected}}checked{{/if}}>
+        <span><strong>{{name}}</strong><small>Purse: {{cash}} · Bank: {{balance}}</small>{{#if error}}<small class="currency-error">{{error}}</small>{{/if}}</span>
+      </label>
+      {{#if ../isWithdraw}}<button type="button" class="currency-max" data-max="{{id}}" aria-pressed="{{max}}">{{#if max}}Max selected{{else}}Max{{/if}}</button>{{/if}}
+    </div>
     {{else}}<p>Select one or more tokens on the canvas to use this tool.</p>{{/each}}
   </div>
-  <label class="currency-field">Action
-    <select name="mode">
-      <option value="pay">Request payment</option>
-      <option value="credit">Credit each</option>
-      <option value="split">Split one reward</option>
-      <option value="deposit">Deposit to bank</option>
-      <option value="withdraw">Withdraw from bank</option>
-      <option value="interest">Apply bank interest</option>
-    </select>
-  </label>
-  <div class="currency-fields">
+  <div class="currency-actions" role="group" aria-label="Money action">
+    <button type="button" data-mode="pay">Request payment</button>
+    <button type="button" data-mode="living">Living costs</button>
+    <button type="button" data-mode="credit">Credit each</button>
+    <button type="button" data-mode="split">Split reward</button>
+    <button type="button" data-mode="deposit">Deposit</button>
+    <button type="button" data-mode="withdraw">Withdraw</button>
+    <button type="button" data-mode="interest">Interest</button>
+    <button type="button" data-mode="wipe">Wipe bank</button>
+  </div>
+  {{#if showCoins}}<div class="currency-fields">
     <label>Gold <input type="number" name="gc" min="0" step="1" value="{{amount.gc}}"></label>
     <label>Silver <input type="number" name="ss" min="0" step="1" value="{{amount.ss}}"></label>
     <label>Brass <input type="number" name="bp" min="0" step="1" value="{{amount.bp}}"></label>
-    <label>Interest % <input type="number" name="rate" min="0" max="100" step="0.01" value="{{rate}}"></label>
-  </div>
-  <p class="currency-hint">The coin fields apply to payments, credits and transfers. Interest applies to bank balances only.</p>
-  <label class="currency-field">Reason (optional) <input type="text" name="reason" maxlength="120" value="{{reason}}"></label>
+  </div>{{/if}}
+  {{#if isInterest}}<label class="currency-field">Interest % <input type="number" name="rate" min="0" max="100" step="0.01" value="{{rate}}"></label>{{/if}}
+  {{#if isLiving}}<p class="currency-hint">One day's living costs: half each character's current Status Standing in its tier's coins. Half pennies round up.</p>{{/if}}
+  {{#if isWithdraw}}<p class="currency-hint">Enter one amount for everyone, or select Max beside individual actors to withdraw their full balance.</p>{{/if}}
+  {{#if isWipe}}<p class="currency-hint">Clears selected bank balances after confirmation. Purses are unchanged.</p>{{/if}}
+  {{#unless isLiving}}<label class="currency-field">Reason (optional) <input type="text" name="reason" maxlength="120" value="{{reason}}"></label>{{/unless}}
   <div class="currency-preview" data-preview aria-live="polite"></div>
-  <button type="button" data-apply disabled>Post cards / apply bank action</button>
+  <button type="button" data-apply disabled>{{#if isWipe}}Wipe selected bank balances{{else}}{{#if isLiving}}Request one day's living costs{{else}}Post cards / apply bank action{{/if}}{{/if}}</button>
   <p>Group fund from split remainders: <strong>{{groupFund}}</strong></p>
   {{#if ledger.length}}
   <details><summary>Recent bank transactions for selected character</summary>
