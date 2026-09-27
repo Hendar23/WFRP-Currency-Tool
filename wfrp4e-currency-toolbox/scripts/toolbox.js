@@ -45,6 +45,39 @@ function allocate(total, count) {
   return { each: Math.floor(total / count), remainder: total % count };
 }
 
+function moneyString(bp) {
+  const c = coins(bp);
+  return Object.entries(c).map(([key, value]) => `${value}${game.i18n.localize(`MARKET.Abbrev.${key.toUpperCase()}`)}`).join("");
+}
+
+function assignedPlayer(actor) {
+  const users = Array.from(game.users).filter(user => !user.isGM && user.character?.id === actor.id);
+  if (users.length !== 1) throw new Error(`${actor.name}: assign this actor to exactly one player in Foundry before posting a money card.`);
+  return users[0];
+}
+
+async function postMoneyCard(row, mode, amount, reason) {
+  const player = assignedPlayer(row.actor);
+  const amountText = moneyString(amount);
+  const c = coins(amount);
+  const template = mode === "pay" ? "market-pay.hbs" : "market-credit.hbs";
+  const data = mode === "pay"
+    ? { product: reason, QtGC: c.gc, QtSS: c.ss, QtBP: c.bp }
+    : { gc: c.gc, ss: c.ss, bp: c.bp, splits: [""] };
+  const html = await foundry.applications.handlebars.renderTemplate(`systems/wfrp4e/templates/chat/market/${template}`, data);
+  const options = {
+    forceWhisper: player.name,
+    flavor: reason ? `For: ${reason}` : undefined,
+    alias: game.i18n.localize(mode === "pay" ? "MARKET.PayRequest" : "MARKET.CreditRequest")
+  };
+  const chatData = game.wfrp4e.utility.chatDataSetup(html, "roll", false, options);
+  chatData.type = mode === "pay" ? "pay" : "credit";
+  chatData.system = mode === "pay"
+    ? { payString: amountText, player: player.name, product: reason }
+    : { payString: amountText, splits: [""], reason };
+  await ChatMessage.create(chatData);
+}
+
 class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: ID,
@@ -103,6 +136,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
         throw new Error("Interest must be between 0% and 100%.");
     } else if (!amount) throw new Error("Enter an amount greater than zero.");
     const split = this.mode === "split" ? allocate(amount, targets.length) : null;
+    if (split && split.each < 1) throw new Error("The reward is too small to give each selected character one brass penny.");
     const rows = targets.map(actor => {
       const cash = purse(actor), account = bank(actor);
       validInteger(account.balance, `${actor.name}'s bank balance`);
@@ -131,7 +165,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
       this._capture();
       const { rows, split } = this._plan();
       const entries = rows.map(r => `<li>${foundry.utils.escapeHTML(r.actor.name)}: purse ${format(r.afterCash)}; bank ${format(r.afterBank)}</li>`).join("");
-      el.innerHTML = `<strong>After this transaction</strong><ul>${entries}</ul>` +
+      el.innerHTML = `<strong>${["pay", "credit", "split"].includes(this.mode) ? "If the players confirm" : "After this transaction"}</strong><ul>${entries}</ul>` +
         (split ? `<p>Each receives ${format(split.each)}. ${format(split.remainder)} goes to the group fund.</p>` : "") +
         (this.mode === "interest" ? `<p>Interest is rounded to the nearest brass penny.</p>` : "");
       this.element.querySelector("[data-apply]").disabled = false;
@@ -164,6 +198,26 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
     catch (error) { return ui.notifications.error(error.message); }
     const button = this.element.querySelector("[data-apply]");
     button.disabled = true;
+    if (["pay", "credit", "split"].includes(this.mode)) {
+      const failures = [], posted = [];
+      for (const row of plan.rows) {
+        try {
+          if (purse(row.actor) !== row.cash) throw new Error("Purse changed. Review and retry.");
+          const amount = this.mode === "split" ? plan.split.each : this.amount.gc * 240 + this.amount.ss * 12 + this.amount.bp;
+          if (amount < 1) throw new Error("This share is less than one brass penny.");
+          await postMoneyCard(row, this.mode === "pay" ? "pay" : "credit", amount, this.reason);
+          posted.push(row.actor.name);
+        } catch (error) { failures.push(`${row.actor.name}: ${error.message}`); }
+      }
+      if (this.mode === "split" && !failures.length && plan.split.remainder) {
+        try { await game.settings.set(ID, "groupFund", game.settings.get(ID, "groupFund") + plan.split.remainder); }
+        catch (error) { failures.push(`Group fund: ${error.message}`); }
+      }
+      if (failures.length) ui.notifications.error(failures.join(" | "));
+      if (posted.length) ui.notifications.info(`Posted ${posted.length} player money card(s). No purses changed yet.`);
+      await this.render({ force: true });
+      return;
+    }
     const completed = [], failures = [];
     for (const row of plan.rows) {
       try {

@@ -2,7 +2,7 @@
   "id": "wfrp4e-currency-toolbox",
   "title": "WFRP Money & Banking",
   "description": "Visual multi-character payments, rewards, exact splits and bank accounts for WFRP4e.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "authors": [{ "name": "Hendar23" }],
   "compatibility": { "minimum": "14", "verified": "14" },
   "relationships": { "systems": [{ "id": "wfrp4e", "type": "system", "compatibility": { "minimum": "10" } }] },
@@ -10,5 +10,5 @@
   "styles": ["styles/toolbox.css"],
   "url": "https://github.com/Hendar23/WFRP-Currency-Tool",
   "manifest": "https://raw.githubusercontent.com/Hendar23/WFRP-Currency-Tool/main/wfrp4e-currency-toolbox/module.json",
-  "download": "https://raw.githubusercontent.com/Hendar23/WFRP-Currency-Tool/main/dist/wfrp4e-currency-toolbox-1.1.0.zip"
+  "download": "https://raw.githubusercontent.com/Hendar23/WFRP-Currency-Tool/main/dist/wfrp4e-currency-toolbox-1.1.1.zip"
 }
