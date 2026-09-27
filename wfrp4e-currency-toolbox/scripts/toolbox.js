@@ -118,7 +118,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: ID,
     classes: [ID],
-    window: { title: "WFRP Money & Banking", resizable: true },
+    window: { title: "WFRP 4e - Money and Banking", resizable: true },
     position: { width: 760, height: 720 }
   };
 
