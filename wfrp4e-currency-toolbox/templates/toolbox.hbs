@@ -1,5 +1,5 @@
 <section class="currency-panel">
-  <p>Select the characters to include. Offline players' characters are available too.</p>
+  <p>Controlled tokens on the canvas. Tick the ones to include in this action.</p>
   <div class="currency-toolbar"><button type="button" data-all>Select all</button><button type="button" data-none>Clear</button></div>
   <div class="currency-actors">
     {{#each actors}}
@@ -7,7 +7,7 @@
       <input type="checkbox" data-actor="{{id}}" {{#if selected}}checked{{/if}}>
       <span><strong>{{name}}</strong><small>Purse: {{cash}} · Bank: {{balance}}</small>{{#if error}}<small class="currency-error">{{error}}</small>{{/if}}</span>
     </label>
-    {{else}}<p>No player controlled character actors were found.</p>{{/each}}
+    {{else}}<p>Select one or more tokens on the canvas to use this tool.</p>{{/each}}
   </div>
   <label class="currency-field">Action
     <select name="mode">

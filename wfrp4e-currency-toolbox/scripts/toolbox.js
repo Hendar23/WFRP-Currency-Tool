@@ -52,12 +52,12 @@ function moneyString(bp) {
 
 function assignedPlayer(actor) {
   const users = Array.from(game.users).filter(user => !user.isGM && user.character?.id === actor.id);
-  if (users.length !== 1) throw new Error(`${actor.name}: assign this actor to exactly one player in Foundry before posting a money card.`);
-  return users[0];
+  return users.length === 1 ? users[0] : null;
 }
 
 async function postMoneyCard(row, mode, amount, reason) {
   const player = assignedPlayer(row.actor);
+  if (!player) return postGMCard(row, mode, amount, reason);
   const amountText = moneyString(amount);
   const c = coins(amount);
   const template = mode === "pay" ? "market-pay.hbs" : "market-credit.hbs";
@@ -78,6 +78,42 @@ async function postMoneyCard(row, mode, amount, reason) {
   await ChatMessage.create(chatData);
 }
 
+async function postGMCard(row, mode, amount, reason) {
+  const verb = mode === "pay" ? "Pay" : "Receive";
+  const name = foundry.utils.escapeHTML(row.actor.name);
+  const detail = reason ? `<p>${foundry.utils.escapeHTML(reason)}</p>` : "";
+  await ChatMessage.create({
+    content: `<div class="currency-chat-card"><p><strong>${name}</strong>: ${verb} ${format(amount)}</p>${detail}<button type="button" data-currency-confirm>${verb} as ${name}</button></div>`,
+    whisper: [game.user.id],
+    flags: { [ID]: { actorUuid: row.actor.uuid, mode, amount, claimed: false } }
+  });
+}
+
+const pendingCards = new Set();
+async function confirmGMCard(message, button) {
+  if (!game.user.isGM || pendingCards.has(message.id)) return;
+  const data = message.getFlag(ID, "actorUuid") ? message.flags[ID] : null;
+  if (!data || data.claimed || !["pay", "credit"].includes(data.mode)) return;
+  pendingCards.add(message.id);
+  button.disabled = true;
+  try {
+    const actor = await fromUuid(data.actorUuid);
+    if (!actor) throw new Error("The target actor is no longer available.");
+    const amount = moneyString(data.amount);
+    const money = data.mode === "pay"
+      ? game.wfrp4e.market.payCommand(amount, actor)
+      : game.wfrp4e.market.creditCommand(amount, actor);
+    if (!money) throw new Error(`Could not ${data.mode} ${actor.name}. Check the WFRP money items and balance.`);
+    await actor.updateEmbeddedDocuments("Item", money);
+    await message.update({ [`flags.${ID}.claimed`]: true });
+    button.textContent = `Completed for ${actor.name}`;
+    ui.notifications.info(`${actor.name}: ${data.mode} complete.`);
+  } catch (error) {
+    ui.notifications.error(error.message);
+    button.disabled = false;
+  } finally { pendingCards.delete(message.id); }
+}
+
 class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: ID,
@@ -89,27 +125,42 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
   static PARTS = { main: { template: `modules/${ID}/templates/toolbox.hbs` } };
 
   selected = new Set();
+  visibleTokens = new Set();
   mode = "pay";
   amount = { gc: 0, ss: 0, bp: 0 };
   rate = 5;
   reason = "";
 
-  get actors() {
-    return game.actors.filter(a => a.type === "character" && a.hasPlayerOwner)
-      .sort((a, b) => a.name.localeCompare(b.name));
+  get targets() {
+    const seen = new Set();
+    return (canvas?.tokens?.controlled ?? []).filter(token => {
+      if (!token.actor || seen.has(token.actor.uuid)) return false;
+      seen.add(token.actor.uuid);
+      return true;
+    }).map(token => ({ id: token.id, actor: token.actor, name: token.name || token.actor.name }));
+  }
+
+  _syncSelection(targets) {
+    const current = new Set(targets.map(target => target.id));
+    this.selected = new Set([...this.selected].filter(id => current.has(id)));
+    for (const id of current) if (!this.visibleTokens.has(id)) this.selected.add(id);
+    this.visibleTokens = current;
   }
 
   async _prepareContext() {
-    const actors = this.actors.map(a => {
+    const targets = this.targets;
+    this._syncSelection(targets);
+    const actors = targets.map(({ id, actor: a, name }) => {
       let error = "", cash = 0;
       try { cash = purse(a); } catch (e) { error = e.message; }
       const account = bank(a);
-      return { id: a.id, name: a.name, selected: this.selected.has(a.id),
+      return { id, name, selected: this.selected.has(id),
         cash: format(cash), balance: format(account.balance), error };
     });
+    const single = targets.find(target => this.selected.has(target.id));
     return { actors, mode: this.mode, amount: this.amount, rate: this.rate,
       reason: this.reason, groupFund: format(game.settings.get(ID, "groupFund")),
-      ledger: this.selected.size === 1 && this.actors.some(a => this.selected.has(a.id)) ? bank(this.actors.find(a => this.selected.has(a.id))).ledger.slice(-8).reverse().map(x => ({
+      ledger: this.selected.size === 1 && single ? bank(single.actor).ledger.slice(-8).reverse().map(x => ({
         ...x, amountText: format(x.amount), balanceText: format(x.after),
         dateText: new Date(x.date).toLocaleString()
       })) : [] };
@@ -125,8 +176,8 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   _plan() {
-    const targets = this.actors.filter(a => this.selected.has(a.id));
-    if (!targets.length) throw new Error("Select at least one character.");
+    const targets = this.targets.filter(target => this.selected.has(target.id));
+    if (!targets.length) throw new Error("Select at least one token on the canvas.");
     if (Object.values(this.amount).some(n => !Number.isSafeInteger(n) || n < 0))
       throw new Error("Enter whole, non-negative coin amounts.");
     const amount = this.amount.gc * 240 + this.amount.ss * 12 + this.amount.bp;
@@ -137,7 +188,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
     } else if (!amount) throw new Error("Enter an amount greater than zero.");
     const split = this.mode === "split" ? allocate(amount, targets.length) : null;
     if (split && split.each < 1) throw new Error("The reward is too small to give each selected character one brass penny.");
-    const rows = targets.map(actor => {
+    const rows = targets.map(({ actor }) => {
       const cash = purse(actor), account = bank(actor);
       validInteger(account.balance, `${actor.name}'s bank balance`);
       let deltaCash = 0, deltaBank = 0;
@@ -214,7 +265,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
         catch (error) { failures.push(`Group fund: ${error.message}`); }
       }
       if (failures.length) ui.notifications.error(failures.join(" | "));
-      if (posted.length) ui.notifications.info(`Posted ${posted.length} player money card(s). No purses changed yet.`);
+      if (posted.length) ui.notifications.info(`Posted ${posted.length} money card(s). No purses changed yet.`);
       await this.render({ force: true });
       return;
     }
@@ -287,4 +338,19 @@ Hooks.on("getSceneControlButtons", controls => {
       else new CurrencyToolbox().render({ force: true });
     }
   };
+});
+
+Hooks.on("controlToken", () => {
+  const app = foundry.applications.instances.get(ID);
+  if (app?.rendered) app.render({ force: true });
+});
+
+Hooks.on("renderChatMessageHTML", (message, html) => {
+  const button = html.querySelector("[data-currency-confirm]");
+  if (!button) return;
+  if (message.flags?.[ID]?.claimed) {
+    button.disabled = true;
+    button.textContent = "Completed";
+  } else if (!game.user.isGM) button.disabled = true;
+  else button.addEventListener("click", () => confirmGMCard(message, button));
 });
