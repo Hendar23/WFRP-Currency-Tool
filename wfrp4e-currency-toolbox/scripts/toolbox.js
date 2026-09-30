@@ -138,7 +138,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: ID,
     classes: [ID],
-    window: { title: "WFRP 4e - Money and Banking", resizable: true },
+    window: { title: "WFRP 4e - Money and Banking Tool", resizable: true },
     position: { width: 760, height: 720 }
   };
 
@@ -147,6 +147,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
   selected = new Set();
   visibleTokens = new Set();
   maxWithdraw = new Set();
+  splitChoice = null;
   mode = "pay";
   amount = { gc: 0, ss: 0, bp: 0 };
   rate = 5;
@@ -184,7 +185,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
       isWithdraw: this.mode === "withdraw", isLiving: this.mode === "living",
       isWipe: this.mode === "wipe", showCoins: !["interest", "living", "wipe"].includes(this.mode),
       amount: this.amount, rate: this.rate,
-      reason: this.reason, groupFund: format(game.settings.get(ID, "groupFund")),
+      reason: this.reason,
       ledger: this.selected.size === 1 && single ? bank(single.actor).ledger.slice(-8).reverse().map(x => ({
         ...x, amountText: format(x.amount), balanceText: format(x.after),
         dateText: new Date(x.date).toLocaleString()
@@ -216,18 +217,25 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
       throw new Error("Enter an amount greater than zero.");
     const split = this.mode === "split" ? allocate(amount, targets.length) : null;
     if (split && split.each < 1) throw new Error("The reward is too small to give each selected character one brass penny.");
+    if (split) {
+      const key = `${amount}:${targets.map(target => target.id).sort().join(":")}`;
+      if (this.splitChoice?.key !== key)
+        this.splitChoice = { key, id: targets[Math.floor(Math.random() * targets.length)].id };
+    }
     const rows = targets.map(({ actor, id }) => {
       const cash = purse(actor), account = bank(actor);
       validInteger(account.balance, `${actor.name}'s bank balance`);
       const rowAmount = this.mode === "living" ? livingCost(actor)
-        : this.mode === "withdraw" && this.maxWithdraw.has(id) ? account.balance : amount;
+        : this.mode === "withdraw" && this.maxWithdraw.has(id) ? account.balance
+        : this.mode === "split" ? split.each + (id === this.splitChoice.id ? split.remainder : 0)
+        : amount;
       if (this.mode === "withdraw" && !rowAmount)
         throw new Error(`${actor.name}: enter an amount or select Max for an account with a balance.`);
       let deltaCash = 0, deltaBank = 0;
       switch (this.mode) {
         case "pay": case "living": deltaCash = -rowAmount; break;
         case "credit": deltaCash = amount; break;
-        case "split": deltaCash = split.each; break;
+        case "split": deltaCash = rowAmount; break;
         case "deposit": deltaCash = -amount; deltaBank = amount; break;
         case "withdraw": deltaCash = rowAmount; deltaBank = -rowAmount; break;
         case "interest": deltaBank = Math.round(account.balance * this.rate / 100); break;
@@ -251,10 +259,9 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
     const el = this.element.querySelector("[data-preview]");
     try {
       this._capture();
-      const { rows, split } = this._plan();
-      const entries = rows.map(r => `<li>${foundry.utils.escapeHTML(r.actor.name)}: ${this.mode === "living" ? `daily cost ${format(r.rowAmount)}; ` : ""}${r.afterCash < 0 ? "insufficient purse funds" : `purse ${format(r.afterCash)}`}; bank ${format(r.afterBank)}</li>`).join("");
-      el.innerHTML = `<strong>${["pay", "credit", "split", "living"].includes(this.mode) ? "If the cards are accepted" : "After this transaction"}</strong><ul>${entries}</ul>` +
-        (split ? `<p>Each receives ${format(split.each)}. ${format(split.remainder)} goes to the group fund.</p>` : "") +
+      const { rows } = this._plan();
+      const entries = rows.map(r => `<li>${foundry.utils.escapeHTML(r.actor.name)}: ${this.mode === "living" ? `daily cost ${format(r.rowAmount)}; ` : ""}${r.afterCash < 0 ? "insufficient funds" : `purse ${format(r.afterCash)}`}; bank ${format(r.afterBank)}</li>`).join("");
+      el.innerHTML = `<strong>${["pay", "credit", "split", "living"].includes(this.mode) ? "If the transactions are accepted" : "After this transaction"}</strong><ul>${entries}</ul>` +
         (this.mode === "interest" ? `<p>Interest is rounded to the nearest brass penny.</p>` : "");
       this.element.querySelector("[data-apply]").disabled = false;
     } catch (error) {
@@ -307,7 +314,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
         `${foundry.utils.escapeHTML(row.actor.name)} (${format(row.account.balance)})`).join("<br>");
       const confirmed = await foundry.applications.api.DialogV2.confirm({
         window: { title: "Wipe bank balances?" },
-        content: `<p>Set these bank balances to zero? This records the loss in each actor's ledger.</p><p>${names}</p>`
+        content: `<p>Set these bank balances to zero?</p><p>${names}</p>`
       });
       if (!confirmed) { button.disabled = false; return; }
     }
@@ -316,17 +323,14 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
       for (const row of plan.rows) {
         try {
           if (purse(row.actor) !== row.cash) throw new Error("Purse changed. Review and retry.");
-          const amount = this.mode === "split" ? plan.split.each : row.rowAmount;
+          const amount = row.rowAmount;
           if (amount < 1) throw new Error("This share is less than one brass penny.");
           const reason = this.mode === "living" ? `Daily living costs: ${row.actor.name}` : this.reason;
           await postMoneyCard(row, ["pay", "living"].includes(this.mode) ? "pay" : "credit", amount, reason);
           posted.push(row.actor.name);
         } catch (error) { failures.push(`${row.actor.name}: ${error.message}`); }
       }
-      if (this.mode === "split" && !failures.length && plan.split.remainder) {
-        try { await game.settings.set(ID, "groupFund", game.settings.get(ID, "groupFund") + plan.split.remainder); }
-        catch (error) { failures.push(`Group fund: ${error.message}`); }
-      }
+      if (this.mode === "split" && !failures.length) this.splitChoice = null;
       if (failures.length) ui.notifications.error(failures.join(" | "));
       if (posted.length) ui.notifications.info(`Posted ${posted.length} money card(s). No purses changed yet.`);
       await this.render({ force: true });
@@ -369,10 +373,6 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
         completed.push(row.actor.name);
       } catch (error) { failures.push(`${row.actor.name}: ${error.message}`); }
     }
-    if (this.mode === "split" && !failures.length && plan.split.remainder) {
-      try { await game.settings.set(ID, "groupFund", game.settings.get(ID, "groupFund") + plan.split.remainder); }
-      catch (error) { failures.push(`Group fund: ${error.message}`); }
-    }
     if (completed.length) {
       const cleanNames = completed.map(name => foundry.utils.escapeHTML(name)).join(", ");
       const cleanReason = foundry.utils.escapeHTML(this.reason);
@@ -391,16 +391,12 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 }
 
-Hooks.once("init", () => {
-  game.settings.register(ID, "groupFund", { name: "Group fund (brass pennies)", scope: "world", config: false, type: Number, default: 0 });
-});
-
 Hooks.on("getSceneControlButtons", controls => {
   if (!game.user.isGM || game.system.id !== "wfrp4e") return;
   const token = controls.tokens;
   if (!token?.tools) return;
   token.tools.currencyToolbox = {
-    name: "currencyToolbox", title: "Money & Banking", icon: "fa-solid fa-coins",
+    name: "currencyToolbox", title: "Money & Banking Tool", icon: "fa-solid fa-coins",
     order: Object.keys(token.tools).length, button: true, visible: true,
     onChange: () => {
       const existing = foundry.applications.instances.get(ID);

@@ -1,5 +1,5 @@
 <section class="currency-panel">
-  <p>Controlled tokens on the canvas. Tick the ones to include in this action.</p>
+  <p>Select tokens to populate this list, then add and remove the actors you wish to include in the transaction.</p>
   <div class="currency-toolbar"><button type="button" data-all>Select all</button><button type="button" data-none>Clear</button></div>
   <div class="currency-actors">
     {{#each actors}}
@@ -10,17 +10,17 @@
       </label>
       {{#if ../isWithdraw}}<button type="button" class="currency-max" data-max="{{id}}" aria-pressed="{{max}}">{{#if max}}Max selected{{else}}Max{{/if}}</button>{{/if}}
     </div>
-    {{else}}<p>Select one or more tokens on the canvas to use this tool.</p>{{/each}}
+    {{else}}<p>Select one or more tokens to use this tool.</p>{{/each}}
   </div>
   <div class="currency-actions" role="group" aria-label="Money action">
     <button type="button" data-mode="pay">Request payment</button>
-    <button type="button" data-mode="living">Living costs</button>
-    <button type="button" data-mode="credit">Credit each</button>
+    <button type="button" data-mode="living">Request living costs</button>
+    <button type="button" data-mode="credit">Give money</button>
     <button type="button" data-mode="split">Split reward</button>
-    <button type="button" data-mode="deposit">Deposit</button>
-    <button type="button" data-mode="withdraw">Withdraw</button>
-    <button type="button" data-mode="interest">Interest</button>
-    <button type="button" data-mode="wipe">Wipe bank</button>
+    <button type="button" data-mode="deposit">Deposit to bank</button>
+    <button type="button" data-mode="withdraw">Withdraw from bank</button>
+    <button type="button" data-mode="interest">Pay bank interest</button>
+    <button type="button" data-mode="wipe">Wipe bank account</button>
   </div>
   {{#if showCoins}}<div class="currency-fields">
     <label>Gold <input type="number" name="gc" min="0" step="1" value="{{amount.gc}}"></label>
@@ -28,13 +28,12 @@
     <label>Brass <input type="number" name="bp" min="0" step="1" value="{{amount.bp}}"></label>
   </div>{{/if}}
   {{#if isInterest}}<label class="currency-field">Interest % <input type="number" name="rate" min="0" max="100" step="0.01" value="{{rate}}"></label>{{/if}}
-  {{#if isLiving}}<p class="currency-hint">One day's living costs: half each character's current Status Standing in its tier's coins. Half pennies round up.</p>{{/if}}
-  {{#if isWithdraw}}<p class="currency-hint">Enter one amount for everyone, or select Max beside individual actors to withdraw their full balance.</p>{{/if}}
-  {{#if isWipe}}<p class="currency-hint">Clears selected bank balances after confirmation. Purses are unchanged.</p>{{/if}}
+  {{#if isLiving}}<p class="currency-hint">One day's living costs: Calculated from social status as per rules. (Half pennies round up.)</p>{{/if}}
+  {{#if isWithdraw}}<p class="currency-hint">Enter one amount for everyone, or select Max beside individual characters to withdraw their full balance.</p>{{/if}}
+  {{#if isWipe}}<p class="currency-hint">Clears selected bank balances after confirmation.</p>{{/if}}
   {{#unless isLiving}}<label class="currency-field">Reason (optional) <input type="text" name="reason" maxlength="120" value="{{reason}}"></label>{{/unless}}
   <div class="currency-preview" data-preview aria-live="polite"></div>
-  <button type="button" data-apply disabled>{{#if isWipe}}Wipe selected bank balances{{else}}{{#if isLiving}}Request one day's living costs{{else}}Post cards / apply bank action{{/if}}{{/if}}</button>
-  <p>Group fund from split remainders: <strong>{{groupFund}}</strong></p>
+  <button type="button" data-apply disabled>{{#if isWipe}}Wipe selected bank balances{{else}}{{#if isLiving}}Request one day's living costs{{else}}Send to chat / apply bank action{{/if}}{{/if}}</button>
   {{#if ledger.length}}
   <details><summary>Recent bank transactions for selected character</summary>
     <ol>{{#each ledger}}<li>{{dateText}} · {{type}} {{amountText}} · balance {{balanceText}}{{#if reason}} · {{reason}}{{/if}}</li>{{/each}}</ol>

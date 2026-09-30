@@ -16,8 +16,8 @@ const messages = [];
 for (const a of actors) a.updateEmbeddedDocuments = async (_type, changes) => {
   for (const change of changes) a.items.find(i => i.id === change._id).system.quantity.value = change['system.quantity.value'];
 };
-let groupFund = 0;
 const context = {
+  Math: Object.assign(Object.create(Math), { random: () => 0.9 }),
   foundry: { applications: { api: { ApplicationV2: class {}, HandlebarsApplicationMixin: Base => Base,
     DialogV2: { confirm: async () => true } },
     handlebars: { renderTemplate: async path => `<div>${path}</div>` } },
@@ -27,7 +27,7 @@ const context = {
   fromUuid: async uuid => [...actors, context.canvas.tokens.controlled[0]?.actor].find(a => a?.uuid === uuid),
   game: { actors, user: { id: 'gm', name: 'Game Master', isGM: true }, users: actors.map(a => ({
     name: `${a.name} player`, isGM: false, character: a, active: false
-  })), settings: { get: () => groupFund, set: async (_id, _key, value) => { groupFund = value; } },
+  })), settings: { get: () => { throw Error('Legacy fund accessed'); }, set: async () => { throw Error('Legacy fund accessed'); } },
     i18n: { localize: key => ({ 'MARKET.Abbrev.GC': 'gc', 'MARKET.Abbrev.SS': 'ss', 'MARKET.Abbrev.BP': 'bp' })[key] ?? key },
     wfrp4e: { utility: { chatDataSetup: (html, type, whisper, opts) => ({ content: html, opts, speaker: { actor: 'A', alias: 'A' } }) },
       market: { creditCommand: (_amount, actor) => actor.items.map(i => ({ _id: i.id, 'system.quantity.value': i.system.quantity.value + (i.system.coinValue.value === 12 ? 1 : 0) })) } } },
@@ -54,11 +54,15 @@ app.render = async () => {};
   assert.equal(messages[0].speaker.actor, undefined);
   assert.equal(actors[0].items[0].system.quantity.value, 1);
   app.mode = 'split'; app.amount = { gc: 0, ss: 0, bp: 5 };
+  assert.deepEqual(Array.from(app._plan().rows, row => row.rowAmount), [2, 3]);
+  assert.deepEqual(Array.from(app._plan().rows, row => row.rowAmount), [2, 3]);
   await app._apply();
   assert.equal(messages.length, 4);
   assert.equal(messages[2].type, 'credit');
   assert.equal(messages[2].system.payString, '0gc0ss2bp');
-  assert.equal(groupFund, 1);
+  assert.equal(messages[3].system.payString, '0gc0ss3bp');
+  context.Math.random = () => 0;
+  assert.deepEqual(Array.from(app._plan().rows, row => row.rowAmount), [3, 2]);
   context.canvas.tokens.controlled = [context.canvas.tokens.controlled[1]];
   app._syncSelection(app.targets);
   assert.deepEqual([...app.selected], ['token-B']);
