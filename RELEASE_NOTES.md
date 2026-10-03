@@ -1,7 +1,3 @@
-# 1.1.9
+# 1.1.10
 
-- Package the module as a versioned GitHub release.
-- Add links to the instructions, bug reports and release notes.
-- Keep the existing installation URL.
-
-No changes to payments, rewards or banking.
+Show purse and bank balances on separate lines in the character list and transaction preview.

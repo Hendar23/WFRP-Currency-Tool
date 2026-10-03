@@ -6,7 +6,7 @@
     <div class="currency-actor">
       <label class="currency-actor-name">
         <input type="checkbox" data-actor="{{id}}" {{#if selected}}checked{{/if}}>
-        <span><strong>{{name}}</strong><small>Purse: {{cash}} · Bank: {{balance}}</small>{{#if error}}<small class="currency-error">{{error}}</small>{{/if}}</span>
+        <span><strong>{{name}}</strong><small>Purse: {{cash}}</small><small>Bank: {{balance}}</small>{{#if error}}<small class="currency-error">{{error}}</small>{{/if}}</span>
       </label>
       {{#if ../isWithdraw}}<button type="button" class="currency-max" data-max="{{id}}" aria-pressed="{{max}}">{{#if max}}Max selected{{else}}Max{{/if}}</button>{{/if}}
     </div>

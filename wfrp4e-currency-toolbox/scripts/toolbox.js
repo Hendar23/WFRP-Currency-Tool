@@ -260,7 +260,7 @@ class CurrencyToolbox extends HandlebarsApplicationMixin(ApplicationV2) {
     try {
       this._capture();
       const { rows } = this._plan();
-      const entries = rows.map(r => `<li>${foundry.utils.escapeHTML(r.actor.name)}: ${this.mode === "living" ? `daily cost ${format(r.rowAmount)}; ` : ""}${r.afterCash < 0 ? "insufficient funds" : `purse ${format(r.afterCash)}`}; bank ${format(r.afterBank)}</li>`).join("");
+      const entries = rows.map(r => `<li>${foundry.utils.escapeHTML(r.actor.name)}:<br>${this.mode === "living" ? `daily cost ${format(r.rowAmount)}<br>` : ""}${r.afterCash < 0 ? "insufficient funds" : `purse ${format(r.afterCash)}`}<br>bank ${format(r.afterBank)}</li>`).join("");
       el.innerHTML = `<strong>${["pay", "credit", "split", "living"].includes(this.mode) ? "If the transactions are accepted" : "After this transaction"}</strong><ul>${entries}</ul>` +
         (this.mode === "interest" ? `<p>Interest is rounded to the nearest brass penny.</p>` : "");
       this.element.querySelector("[data-apply]").disabled = false;
