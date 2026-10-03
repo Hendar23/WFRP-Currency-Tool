@@ -2,7 +2,7 @@
   "id": "wfrp4e-currency-toolbox",
   "title": "WFRP 4e - Money and Banking Tool",
   "description": "Money management tool for WFRP 4e",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "authors": [{ "name": "Hendar23" }],
   "compatibility": { "minimum": "14", "verified": "14" },
   "relationships": { "systems": [{ "id": "wfrp4e", "type": "system", "compatibility": { "minimum": "10" } }] },
@@ -10,5 +10,8 @@
   "styles": ["styles/toolbox.css"],
   "url": "https://github.com/Hendar23/WFRP-Currency-Tool",
   "manifest": "https://raw.githubusercontent.com/Hendar23/WFRP-Currency-Tool/main/wfrp4e-currency-toolbox/module.json",
-  "download": "https://raw.githubusercontent.com/Hendar23/WFRP-Currency-Tool/main/dist/wfrp4e-currency-toolbox-1.1.8.zip"
+  "download": "https://github.com/Hendar23/WFRP-Currency-Tool/releases/download/1.1.9/module.zip",
+  "readme": "https://github.com/Hendar23/WFRP-Currency-Tool/blob/main/README.md",
+  "bugs": "https://github.com/Hendar23/WFRP-Currency-Tool/issues",
+  "changelog": "https://github.com/Hendar23/WFRP-Currency-Tool/releases"
 }

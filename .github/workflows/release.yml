@@ -1,0 +1,33 @@
+name: Publish release
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check transaction behaviour
+        run: node tests/currency-card-test.cjs
+      - name: Build and validate package
+        run: python3 scripts/package.py
+      - name: Publish release with installation assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          VERSION=$(python3 -c 'import json; print(json.load(open("wfrp4e-currency-toolbox/module.json"))["version"])')
+          gh release create "$VERSION" release-assets/module.json release-assets/module.zip \
+            --target "$RELEASE_COMMIT" --title "$VERSION" --notes-file RELEASE_NOTES.md
